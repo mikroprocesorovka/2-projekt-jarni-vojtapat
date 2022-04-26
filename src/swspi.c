@@ -1,74 +1,48 @@
+#include "stm8s_conf.h"
 #include "swspi.h"
 
-#define CS_L GPIO_WriteLow(CS_PORT,CS_PIN)
-#define CS_H GPIO_WriteHigh(CS_PORT,CS_PIN)
-#define CLK_L GPIO_WriteLow(CLK_PORT,CLK_PIN)
-#define	CLK_H GPIO_WriteHigh(CLK_PORT,CLK_PIN)
-#define DIN_L GPIO_WriteLow(DIN_PORT,DIN_PIN)
-#define DIN_H GPIO_WriteHigh(DIN_PORT,DIN_PIN)
+#define CLK_HIGH 			GPIO_WriteHigh(CLK_GPIO, CLK_PIN)
+#define CLK_LOW 			GPIO_WriteLow(CLK_GPIO, CLK_PIN)
+#define DATA_HIGH 		GPIO_WriteHigh(DATA_GPIO, DATA_PIN)
+#define DATA_LOW 			GPIO_WriteLow(DATA_GPIO, DATA_PIN)
+#define CS_HIGH 			GPIO_WriteHigh(CS_GPIO, CS_PIN)
+#define CS_LOW 				GPIO_WriteLow(CS_GPIO, CS_PIN)
 
-#define SET(BAGR) GPIO_WriteHigh(BAGR##_PORT, BAGR##_PIN)
-#define CLR(BAGR)  GPIO_WriteLow(BAGR##_PORT, BAGR##_PIN)
 
-void swspi_init(void){
-GPIO_Init(CS_PORT,CS_PIN,GPIO_MODE_OUT_PP_HIGH_FAST);
-GPIO_Init(CLK_PORT,CLK_PIN,GPIO_MODE_OUT_PP_LOW_FAST);
-GPIO_Init(DIN_PORT,DIN_PIN,GPIO_MODE_OUT_PP_LOW_FAST);
-}
 
 // Odesílá 16bit dat MSB first, SPI mode, sama provádí manipulaci s CS
-void swspi_tx16(uint16_t data)
-{
-    uint16_t maska = 1 << 15;
+void max7219_posli(uint8_t adresa, uint8_t data){
+uint8_t maska; // pomocná proměnná, která bude sloužit k procházení dat bit po bitu
+CS_LOW; // nastavíme linku LOAD/CS do úrovně Low (abychom po zapsání všech 16ti bytů mohli vygenerovat na CS vzestupnou hranu)
 
-    CS_L;
-    while (maska) {
-        if (maska & data) {
-            DIN_H;
-        } else {
-            DIN_L;
-        }
-        CLK_H;
-        maska = maska >> 1;
-        CLK_L;
-    }
-    CS_H;
+// nejprve odešleme prvních 8bitů zprávy (adresa/příkaz)
+maska = 0b10000000; // lepší zápis je: maska = 1<<7
+CLK_LOW; // připravíme si na CLK vstup budiče úroveň Low
+while(maska){ // dokud jsme neposlali všech 8 bitů
+	if(maska & adresa){ // pokud má právě vysílaný bit hodnotu 1
+		DATA_HIGH; // nastavíme budiči vstup DIN do úrovně High
+	}
+	else{ // jinak má právě vysílaný bit hodnotu 0 a...
+		DATA_LOW;	// ... nastavíme budiči vstup DIN do úrovně Low
+	}
+	CLK_HIGH; // přejdeme na CLK z úrovně Low do úrovně High, a budič si zapíše hodnotu bitu, kterou jsme nastavili na DIN
+	maska = maska>>1; // rotujeme masku abychom v příštím kroku vysílali nižší bit
+	CLK_LOW; // vrátíme CLK zpět do Low abychom mohli celý proces vysílání bitu opakovat
 }
 
+// poté pošleme dolních 8 bitů zprávy (data/argument)
+maska = 0b10000000;
+while(maska){ // dokud jsme neposlali všech 8 bitů
+	if(maska & data){ // pokud má právě vysílaný bit hodnotu 1
+		DATA_HIGH; // nastavíme budiči vstup DIN do úrovně High
+	}
+	else{ // jinak má právě vysílaný bit hodnotu 0 a...
+		DATA_LOW;	// ... nastavíme budiči vstup DIN do úrovně Low
+	}
+	CLK_HIGH; // přejdeme na CLK z úrovně Low do úrovně High, a v budič si zapíše hodnotu bitu, kterou jsme nastavili na DIN
+	maska = maska>>1; // rotujeme masku abychom v příštím kroku vysílali nižší bit
+	CLK_LOW; // vrátíme CLK zpět do Low abychom mohli celý proces vysílání bitu opakovat
+}
 
-void swspi_tx2x8(uint8_t address, uint8_t data)
-{
-    uint16_t mask ;
-
-    CLR(CS);                    // začánám visílat
-
-    // adresa
-    mask = 1 << 7;
-    while (mask) {
-        CLR(CLK);
-        if (address & mask) {
-            SET(DIN);
-        } else {
-            CLR(DIN);
-        }
-        SET(CLK);
-        mask >>= 1;
-        CLR(CLK);
-    }
-
-    // data 
-    mask = 1 << 7;
-    while (mask) {
-        CLR(CLK);
-        if (data & mask) {
-            SET(DIN);
-        } else {
-            CLR(DIN);
-        }
-        SET(CLK);
-        mask >>= 1;
-        CLR(CLK);
-    }
-
-    SET(CS);                    // končím vysílán
+CS_HIGH; // nastavíme LOAD/CS z úrovně Low do úrovně High a vygenerujeme tím vzestupnou hranu (pokyn pro MAX7219 aby zpracoval náš příkaz)
 }
